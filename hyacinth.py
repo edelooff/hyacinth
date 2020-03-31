@@ -17,23 +17,38 @@ DESIGN_FLOWER = re.compile(r'''
 
 class Pool:
     def __init__(self):
+        self.common_species = set()
         self.designers = []
         self.flowers = Counter()
 
     def add_designer(self, designer):
-        """Adds a BouquetDesigner for the pool size."""
+        """Adds a BouquetDesigner for the pool size.
+
+        It also updates the set of known required species, allowing better
+        picking of 'filler' flowers for requested bouquets.
+        """
         self.designers.append(designer)
+        self.common_species |= designer.required_flowers.keys()
 
     def add_flower(self, species):
         """Adds a flower of given species to the pool of available flowers."""
         self.flowers[species] += 1
         for designer in self.designers:
             if designer.add(species):
-                bouquet = designer.create(self.flowers)
-                print(designer.stringify_bouquet(bouquet))
-                for bundle in bouquet.items():
-                    for gen in self.designers:
-                        gen.remove(*bundle)
+                print(self.create_bouquet(designer))
+
+    def create_bouquet(self, designer):
+        """Creates a bouquet according to the given designers design.
+
+        After creating the bouquet, other designers are informed of the
+        removal of flower species from the shared pool.
+        """
+        bouquet = designer.create(self.flowers, self.common_species)
+        bouquet_string = designer.stringify_bouquet(bouquet)
+        for bundle in bouquet.items():
+            for designer in self.designers:
+                designer.remove(*bundle)
+        return bouquet_string
 
 
 class BouquetDesigner:
@@ -62,27 +77,42 @@ class BouquetDesigner:
             return True
         return False
 
-    def create(self, pool):
+    def create(self, pool, common_species):
         """Returns a bouquet (species listing) assembled from the given pool.
 
         After picking the required flowers, if additional flowers are needed,
-        this method selects a sample of flowers from the pool at random. This
-        avoids pathological behaviour where it *consistently* steals the same
-        flower speciess required by other designs, it simply picks a few of
-        everything, with a bias to flowers there are a lot of.
+        this method selects a sample of flowers from the rest of the pool in
+        two steps:
+
+        1. Species of flowers used by other BouquetDesigners are avoided so
+           that selection for this bouquet causes the least conflict.
+        2. A random sample of flowers is picked, to avoid consistently stealing
+           from the same other designers. Randomly selecting also hopefully
+           generates nice and pleasing outcomes for the recipient, though this
+           hypothesis has not been tested in the least.
+
+        In all cases we bias to picking random flowers that we have a surplus
+        of. In an ideal world we would have a function that determines the
+        correct bias to introduce here.
         """
         bouquet = Counter()
-        for species, count in self.required_flowers.items():
-            pool[species] -= count
-            bouquet[species] += count
+        for species, quantity in self.required_flowers.items():
+            pool[species] -= quantity
+            bouquet[species] += quantity
         # Pick the remaining flowers
         if self.random_flower_count:
-            population = []
-            for species, count in pool.items():
-                population.extend([species] * count)
-            for species in random.sample(population, self.random_flower_count):
-                pool[species] -= 1
-                bouquet[species] += 1
+            remaining = self.random_flower_count
+            for do_not_pick in (common_species, set()):
+                population = []
+                for species in pool.keys() ^ do_not_pick:
+                    population.extend([species] * pool[species])
+                sample_size = min(len(population), remaining)
+                for species in random.sample(population, sample_size):
+                    pool[species] -= 1
+                    bouquet[species] += 1
+                remaining -= sample_size
+                if not remaining:
+                    break
         return bouquet
 
     def remove(self, species, quantity):

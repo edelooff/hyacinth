@@ -52,46 +52,56 @@ class Pool:
 
 
 class BouquetDesigner:
-    def __init__(self, design, size, required_flowers, total_count):
+    def __init__(self, design, flower_size, required_flowers, bouquet_size):
         self.design = design
-        self.size = size
-        self.random_flower_count = total_count - sum(required_flowers.values())
+        self.flower_size = flower_size
+        self.bouquet_size = bouquet_size
         self.required_flowers = required_flowers
-        self.total_count = total_count
-        self.pool_available = Counter()
-        self.wildcards = 0
+        self.filler_quantity = bouquet_size - sum(required_flowers.values())
+        self.available_filler = 0
+        self.available_flowers = Counter()
 
     def add(self, species):
+        """Adds a species of flower to the local availability cache.
+
+        In addition. this will check whether a bouquet can be created based on
+        the recently seen flowers. If one can be created, this returns True.
+        """
         if species in self.required_flowers:
-            self.pool_available[species] += 1
+            self.available_flowers[species] += 1
         else:
-            self.wildcards += 1
+            self.available_filler += 1
         return self.can_create()
 
     def can_create(self):
-        for flower, count in self.required_flowers.items():
-            if self.pool_available[flower] < count:
+        """Checks whether there are enough flowers to create a bouquet.
+
+        This will check if there is enough quantity of the required flowers and
+        if so, will check if there is enough filler to create a full bouquet.
+        """
+        for flower, quantity in self.required_flowers.items():
+            if self.available_flowers[flower] < quantity:
                 return False
-        available = sum(self.pool_available.values()) + self.wildcards
-        if available >= self.total_count:
+        available = sum(self.available_flowers.values(), self.available_filler)
+        if available >= self.bouquet_size:
             return True
         return False
 
     def create(self, pool, common_species):
         """Returns a bouquet (species listing) assembled from the given pool.
 
-        After picking the required flowers, if additional flowers are needed,
-        this method selects a sample of flowers from the rest of the pool in
-        two steps:
+        After picking the required flowers, if additional flowers are needed
+        as filler, this method selects a sample of flowers from the rest of
+        the pool in two steps:
 
         1. Species of flowers used by other BouquetDesigners are avoided so
            that selection for this bouquet causes the least conflict.
         2. A random sample of flowers is picked, to avoid consistently stealing
            from the same other designers. Randomly selecting also hopefully
            generates nice and pleasing outcomes for the recipient, though this
-           hypothesis has not been tested in the least.
+           hypothesis has not been tested in the least ;-)
 
-        In all cases we bias to picking random flowers that we have a surplus
+        In all cases we bias to picking filler flowers that we have a surplus
         of. In an ideal world we would have a function that determines the
         correct bias to introduce here.
         """
@@ -100,8 +110,8 @@ class BouquetDesigner:
             pool[species] -= quantity
             bouquet[species] += quantity
         # Pick the remaining flowers
-        if self.random_flower_count:
-            remaining = self.random_flower_count
+        if self.filler_quantity:
+            remaining = self.filler_quantity
             for do_not_pick in (common_species, set()):
                 population = []
                 for species in pool.keys() ^ do_not_pick:
@@ -119,25 +129,26 @@ class BouquetDesigner:
         """Proceses removal of flowers from the flower pool.
 
         This will update either the cache for available required flowers, or
-        if it's a speciess not -required- for this deisgn, the wildcard count.
+        if it's a species not -required- for this design, the filler count.
         """
         if species in self.required_flowers:
-            self.pool_available[species] -= quantity
+            self.available_flowers[species] -= quantity
         else:
-            self.wildcards -= quantity
+            self.available_filler -= quantity
 
     def stringify_bouquet(self, bouquet):
+        """Returns the formatted bouquet string for this designer."""
         flowers = sorted(bouquet.items())
         flowerstring = (f'{count}{species}' for species, count in flowers)
-        return f'{self.design}{self.size}{"".join(flowerstring)}'
+        return f'{self.design}{self.flower_size}{"".join(flowerstring)}'
 
     @classmethod
     def from_specification(cls, design):
+        """Creates a BouquetDesigner instance from a string specification."""
         spec = DESIGN.match(design).groupdict()
         spec_flowers = DESIGN_FLOWER.findall(spec['flowers'])
         flowers = {species: int(count) for count, species in spec_flowers}
-        return cls(
-            spec['design'], spec['size'], flowers, int(spec['total']))
+        return cls(spec['design'], spec['size'], flowers, int(spec['total']))
 
 
 def read_until_empty(fp):
@@ -150,7 +161,7 @@ def main():
     pools = defaultdict(Pool)
     for design in read_until_empty(sys.stdin):
         designer = BouquetDesigner.from_specification(design)
-        pools[designer.size].add_designer(designer)
+        pools[designer.flower_size].add_designer(designer)
     for species, size in read_until_empty(sys.stdin):
         pools[size].add_flower(species)
 

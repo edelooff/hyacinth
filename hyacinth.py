@@ -1,4 +1,6 @@
-from collections import Counter
+from collections import (
+    Counter,
+    defaultdict)
 import random
 import re
 import sys
@@ -13,6 +15,27 @@ DESIGN_FLOWER = re.compile(r'''
     (?P<species>[a-z])''', re.VERBOSE)
 
 
+class Pool:
+    def __init__(self):
+        self.designers = []
+        self.flowers = Counter()
+
+    def add_designer(self, designer):
+        """Adds a BouquetDesigner for the pool size."""
+        self.designers.append(designer)
+
+    def add_flower(self, species):
+        """Adds a flower of given species to the pool of available flowers."""
+        self.flowers[species] += 1
+        for designer in self.designers:
+            if designer.add(species):
+                bouquet = designer.create(self.flowers)
+                print(designer.stringify_bouquet(bouquet))
+                for bundle in bouquet.items():
+                    for gen in self.designers:
+                        gen.remove(*bundle)
+
+
 class BouquetDesigner:
     def __init__(self, design, size, required_flowers, total_count):
         self.design = design
@@ -23,13 +46,12 @@ class BouquetDesigner:
         self.pool_available = Counter()
         self.wildcards = 0
 
-    def added(self, species, size):
-        if size == self.size:
-            if species in self.required_flowers:
-                self.pool_available[species] += 1
-            else:
-                self.wildcards += 1
-            return self.can_create()  # Only relevant if correct size was added
+    def add(self, species):
+        if species in self.required_flowers:
+            self.pool_available[species] += 1
+        else:
+            self.wildcards += 1
+        return self.can_create()
 
     def can_create(self):
         for flower, count in self.required_flowers.items():
@@ -63,17 +85,16 @@ class BouquetDesigner:
                 bouquet[species] += 1
         return bouquet
 
-    def remove(self, species, size, quantity=1):
+    def remove(self, species, quantity):
         """Proceses removal of flowers from the flower pool.
 
         This will update either the cache for available required flowers, or
         if it's a speciess not -required- for this deisgn, the wildcard count.
         """
-        if size == self.size:
-            if species in self.required_flowers:
-                self.pool_available[species] -= quantity
-            else:
-                self.wildcards -= quantity
+        if species in self.required_flowers:
+            self.pool_available[species] -= quantity
+        else:
+            self.wildcards -= quantity
 
     def stringify_bouquet(self, bouquet):
         flowers = sorted(bouquet.items())
@@ -90,20 +111,12 @@ class BouquetDesigner:
 
 
 def main():
-    designers = []
-    pools = {'L': Counter(), 'S': Counter()}
+    pools = defaultdict(Pool)
     for design in iter(sys.stdin.readline, '\n'):
-        designers.append(BouquetDesigner.from_specification(design))
+        designer = BouquetDesigner.from_specification(design)
+        pools[designer.size].add_designer(designer)
     for species, size in (line.strip() for line in sys.stdin):
-        pools[size][species] += 1
-        for designer in designers:
-            if designer.added(species, size):
-                bouquet = designer.create(pools[size])
-                # Move this out of the main loop probably
-                for b_species, quantity in bouquet.items():
-                    for gen in designers:
-                        gen.remove(b_species, size, quantity=quantity)
-                print(designer.stringify_bouquet(bouquet))
+        pools[size].add_flower(species)
 
 
 if __name__ == '__main__':

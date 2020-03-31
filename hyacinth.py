@@ -140,12 +140,18 @@ class BouquetDesigner:
             spec['design'], spec['size'], flowers, int(spec['total']))
 
 
+def read_until_empty(fp):
+    """Yields lines from the given filepointer until an empty line is hit."""
+    while (line := fp.readline().strip()):
+        yield line
+
+
 def main():
     pools = defaultdict(Pool)
-    for design in iter(sys.stdin.readline, '\n'):
+    for design in read_until_empty(sys.stdin):
         designer = BouquetDesigner.from_specification(design)
         pools[designer.size].add_designer(designer)
-    for species, size in (line.strip() for line in sys.stdin):
+    for species, size in read_until_empty(sys.stdin):
         pools[size].add_flower(species)
 
 

@@ -8,7 +8,7 @@ import sys
 DESIGN = re.compile(r'''
     (?P<design>[A-Z])
     (?P<size>[SL])
-    (?P<flowers>(:?\d+[a-z])+)
+    (?P<flowers>(:?\d+[a-z])*)  # The specification is fuzzy on 1+ or 0+
     (?P<total>\d+)''', re.VERBOSE)
 DESIGN_FLOWER = re.compile(r'''
     (?P<count>\d+)
@@ -57,9 +57,9 @@ class BouquetDesigner:
         for flower, count in self.required_flowers.items():
             if self.pool_available[flower] < count:
                 return False
-            available = sum(self.pool_available.values()) + self.wildcards
-            if available >= self.total_count:
-                return True
+        available = sum(self.pool_available.values()) + self.wildcards
+        if available >= self.total_count:
+            return True
         return False
 
     def create(self, pool):
